@@ -28,12 +28,14 @@ public class MainController : MonoBehaviour
     private TimeSpan _audioDuration;
     private List<PeakInfo> _peakInfos;
     private PeakInfo _defaultPeakInfo;
+    private int _lastCenterPeakInfoIndex;
 
     private void Awake()
     {
         _peakInstances = _peaksContainer.GetComponentsInChildren<MaxMinPeak>();
         _maxPeakHeight = _peaksContainer.rect.height / 2;
         _defaultPeakInfo = new PeakInfo(-_minPeakHeight / _maxPeakHeight, _minPeakHeight / _maxPeakHeight);
+       
     }
 
     private void RetrieveAudioInfo(out List<PeakInfo> peakInfos, out TimeSpan duration)
@@ -54,6 +56,7 @@ public class MainController : MonoBehaviour
             for (int i = 0; i < _totalPeakInfosCount; i++)
             {
                 var samplesRead = sp.Read(_readBuffer, 0, _readBuffer.Length);
+                
                 var max = (samplesRead == 0) ? 0 : _readBuffer.Take(samplesRead).Max();
                 var min = (samplesRead == 0) ? 0 : _readBuffer.Take(samplesRead).Min();
                 peakInfos.Add(new PeakInfo(min, max));
@@ -70,6 +73,7 @@ public class MainController : MonoBehaviour
 
         _currentTime = 0;
         _timerIsRunning = true;
+        _lastCenterPeakInfoIndex = -1;
     }
 
     private void Update()
@@ -91,6 +95,9 @@ public class MainController : MonoBehaviour
         int centerPeakInfoIndex =
             Mathf.RoundToInt((float) _currentTime / (float) audioDurationSec * _totalPeakInfosCount);
 
+        if (centerPeakInfoIndex == _lastCenterPeakInfoIndex) return;
+        _lastCenterPeakInfoIndex = centerPeakInfoIndex;
+
         for (int i = 0; i < instancesLength; i++)
         {
             var peakInfoIndex = Mathf.RoundToInt(centerPeakInfoIndex - (float) instancesLength / 2) + i;
@@ -101,10 +108,10 @@ public class MainController : MonoBehaviour
             var peakInstance = _peakInstances[i];
 
             var sizeDelta = peakInstance.MaxPeak.rectTransform.sizeDelta;
-            peakInstance.MaxPeak.rectTransform.sizeDelta = new Vector2(sizeDelta.x, peakInfo.Max * _maxPeakHeight);
+            peakInstance.MaxPeak.rectTransform.sizeDelta = new Vector2(sizeDelta.x, Mathf.Max(peakInfo.Max * _maxPeakHeight, _minPeakHeight));
 
             sizeDelta = peakInstance.MinPeak.rectTransform.sizeDelta;
-            peakInstance.MinPeak.rectTransform.sizeDelta = new Vector2(sizeDelta.x, -peakInfo.Min * _maxPeakHeight);
+            peakInstance.MinPeak.rectTransform.sizeDelta = new Vector2(sizeDelta.x, Mathf.Max(-peakInfo.Min * _maxPeakHeight, _minPeakHeight));
         }
     }
 
