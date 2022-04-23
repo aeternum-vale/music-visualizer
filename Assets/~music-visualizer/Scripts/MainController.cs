@@ -10,11 +10,15 @@ using UnityEngine.UI;
 
 public class MainController : MonoBehaviour
 {
-    [SerializeField] private int _totalPeakInfosCount = 1000;
-    [SerializeField] private float _minPeakHeight = 5;
+    [SerializeField] private AudioSource _audioSource;
+    [SerializeField] private string _filePath;
+
+    [Space] [SerializeField] private int _totalPeakInfosCount = 1000;
+    [SerializeField] private float _peakMinHeight = 5;
+    [SerializeField] private float _minPeakHeightMultiplier = 1f;
+    [SerializeField] private float _peakInterpolation = 0.1f;
     [ReadOnly] [SerializeField] private float _maxPeakHeight;
 
-    [SerializeField] private string _filePath;
 
     [Space] [SerializeField] private RectTransform _peaksContainer;
     [SerializeField] private TMP_Text _timeText;
@@ -27,15 +31,16 @@ public class MainController : MonoBehaviour
     private float _currentTime;
     private TimeSpan _audioDuration;
     private List<PeakInfo> _peakInfos;
+    private PeakInfo[] _targetPeakHeights;
     private PeakInfo _defaultPeakInfo;
     private int _lastCenterPeakInfoIndex;
 
     private void Awake()
     {
         _peakInstances = _peaksContainer.GetComponentsInChildren<MaxMinPeak>();
+        _targetPeakHeights = new PeakInfo[_peakInstances.Length];
         _maxPeakHeight = _peaksContainer.rect.height / 2;
-        _defaultPeakInfo = new PeakInfo(-_minPeakHeight / _maxPeakHeight, _minPeakHeight / _maxPeakHeight);
-       
+        _defaultPeakInfo = new PeakInfo(-_peakMinHeight / _maxPeakHeight, _peakMinHeight / _maxPeakHeight);
     }
 
     private void RetrieveAudioInfo(out List<PeakInfo> peakInfos, out TimeSpan duration)
@@ -56,7 +61,7 @@ public class MainController : MonoBehaviour
             for (int i = 0; i < _totalPeakInfosCount; i++)
             {
                 var samplesRead = sp.Read(_readBuffer, 0, _readBuffer.Length);
-                
+
                 var max = (samplesRead == 0) ? 0 : _readBuffer.Take(samplesRead).Max();
                 var min = (samplesRead == 0) ? 0 : _readBuffer.Take(samplesRead).Min();
                 peakInfos.Add(new PeakInfo(min, max));
@@ -74,6 +79,8 @@ public class MainController : MonoBehaviour
         _currentTime = 0;
         _timerIsRunning = true;
         _lastCenterPeakInfoIndex = -1;
+
+        _audioSource.Play();
     }
 
     private void Update()
@@ -95,23 +102,42 @@ public class MainController : MonoBehaviour
         int centerPeakInfoIndex =
             Mathf.RoundToInt((float) _currentTime / (float) audioDurationSec * _totalPeakInfosCount);
 
-        if (centerPeakInfoIndex == _lastCenterPeakInfoIndex) return;
-        _lastCenterPeakInfoIndex = centerPeakInfoIndex;
+        if (centerPeakInfoIndex != _lastCenterPeakInfoIndex)
+        {
+            _lastCenterPeakInfoIndex = centerPeakInfoIndex;
+
+            for (int i = 0; i < instancesLength; i++)
+            {
+                var peakInfoIndex = Mathf.RoundToInt(centerPeakInfoIndex - (float) instancesLength / 2) + i;
+                PeakInfo peakInfo = peakInfoIndex >= 0 && peakInfoIndex < peakInfosLength
+                    ? _peakInfos[peakInfoIndex]
+                    : _defaultPeakInfo;
+
+                float extendedI = i * instancesLength / (instancesLength - 1f);
+                float halfInstancesLength = instancesLength / 2f;
+                float closenessToTheCenter = 1f - Math.Abs(extendedI / halfInstancesLength - 1f);
+
+                float sinClosenessToTheCenter = Mathf.Pow(Mathf.Sin(closenessToTheCenter * Mathf.PI / 2f), 5);
+
+                _targetPeakHeights[i] = new PeakInfo(
+                    Mathf.Max(-peakInfo.Min * _maxPeakHeight * sinClosenessToTheCenter * _minPeakHeightMultiplier, _peakMinHeight),
+                    Mathf.Max(peakInfo.Max * _maxPeakHeight * sinClosenessToTheCenter, _peakMinHeight)
+                );
+            }
+        }
 
         for (int i = 0; i < instancesLength; i++)
         {
-            var peakInfoIndex = Mathf.RoundToInt(centerPeakInfoIndex - (float) instancesLength / 2) + i;
-            PeakInfo peakInfo = peakInfoIndex >= 0 && peakInfoIndex < peakInfosLength
-                ? _peakInfos[peakInfoIndex]
-                : _defaultPeakInfo;
-
             var peakInstance = _peakInstances[i];
+            PeakInfo targetHeights = _targetPeakHeights[i];
 
             var sizeDelta = peakInstance.MaxPeak.rectTransform.sizeDelta;
-            peakInstance.MaxPeak.rectTransform.sizeDelta = new Vector2(sizeDelta.x, Mathf.Max(peakInfo.Max * _maxPeakHeight, _minPeakHeight));
+            peakInstance.MaxPeak.rectTransform.sizeDelta =
+                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Max, _peakInterpolation));
 
             sizeDelta = peakInstance.MinPeak.rectTransform.sizeDelta;
-            peakInstance.MinPeak.rectTransform.sizeDelta = new Vector2(sizeDelta.x, Mathf.Max(-peakInfo.Min * _maxPeakHeight, _minPeakHeight));
+            peakInstance.MinPeak.rectTransform.sizeDelta =
+                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Min, _peakInterpolation));
         }
     }
 
