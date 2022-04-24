@@ -1,19 +1,18 @@
 using System;
 using System.Collections.Generic;
 using NAudio.Wave;
-using NAudio.WaveFormRenderer;
+using NAudioWaveFormRenderer;
 using NaughtyAttributes;
-using UnityEngine;
-using System.Linq;
 using TMPro;
-using UnityEngine.UI;
+using UnityEngine;
 
 public class MainController : MonoBehaviour
 {
     [SerializeField] private AudioSource _audioSource;
     [SerializeField] private string _filePath;
 
-    [Space] [SerializeField] private int _totalPeakInfosCount = 1000;
+    [Space] [SerializeField] private EPeakProviderType _peakProviderType = EPeakProviderType.Max;
+    [SerializeField] private int _totalPeakInfosCount = 1000;
     [SerializeField] private float _peakMinHeight = 5;
     [SerializeField] private float _minPeakHeightMultiplier = 1f;
     [SerializeField] private float _peakInterpolation = 0.1f;
@@ -23,6 +22,8 @@ public class MainController : MonoBehaviour
     [Space] [SerializeField] private RectTransform _peaksContainer;
     [SerializeField] private TMP_Text _timeText;
 
+
+    [Space] [SerializeField] private bool _testMode = false;
 
     private MaxMinPeak[] _peakInstances;
     private float[] _readBuffer;
@@ -43,7 +44,7 @@ public class MainController : MonoBehaviour
         _defaultPeakInfo = new PeakInfo(-_peakMinHeight / _maxPeakHeight, _peakMinHeight / _maxPeakHeight);
     }
 
-    private void RetrieveAudioInfo(out List<PeakInfo> peakInfos, out TimeSpan duration)
+    private void RetrieveAudioInfo(IPeakProvider peakProvider, out List<PeakInfo> peakInfos, out TimeSpan duration)
     {
         if (_filePath == null) throw new Exception("file path is null");
 
@@ -54,32 +55,44 @@ public class MainController : MonoBehaviour
             int bytesPerSample = waveStream.WaveFormat.BitsPerSample / 8;
             var samples = waveStream.Length / bytesPerSample;
             var samplesPerPixel = (int) (samples / _totalPeakInfosCount);
-            _readBuffer = new float[samplesPerPixel];
-
-            var sp = waveStream.ToSampleProvider();
+            peakProvider.Init(waveStream.ToSampleProvider(), samplesPerPixel);
 
             for (int i = 0; i < _totalPeakInfosCount; i++)
-            {
-                var samplesRead = sp.Read(_readBuffer, 0, _readBuffer.Length);
-
-                var max = (samplesRead == 0) ? 0 : _readBuffer.Take(samplesRead).Max();
-                var min = (samplesRead == 0) ? 0 : _readBuffer.Take(samplesRead).Min();
-                peakInfos.Add(new PeakInfo(min, max));
-            }
+                peakInfos.Add(peakProvider.GetNextPeak());
 
             duration = waveStream.TotalTime;
+        }
+    }
+
+    private IPeakProvider GetPeakProvider()
+    {
+        switch (_peakProviderType)
+        {
+            case EPeakProviderType.Average:
+                return new AveragePeakProvider(4);
+            case EPeakProviderType.Decibel:
+                return new DecibelPeakProvider(new MaxPeakProvider(), 48);
+            case EPeakProviderType.Max:
+                return new MaxPeakProvider();
+            case EPeakProviderType.Rms:
+                return new RmsPeakProvider(4);
+            case EPeakProviderType.Sampling:
+                return new SamplingPeakProvider(4);
+            default:
+                throw new ArgumentOutOfRangeException();
         }
     }
 
     [Button]
     private void Play()
     {
-        RetrieveAudioInfo(out _peakInfos, out _audioDuration);
+        RetrieveAudioInfo(GetPeakProvider(), out _peakInfos, out _audioDuration);
 
         _currentTime = 0;
         _timerIsRunning = true;
         _lastCenterPeakInfoIndex = -1;
 
+        
         _audioSource.Play();
     }
 
@@ -116,11 +129,14 @@ public class MainController : MonoBehaviour
                 float extendedI = i * instancesLength / (instancesLength - 1f);
                 float halfInstancesLength = instancesLength / 2f;
                 float closenessToTheCenter = 1f - Math.Abs(extendedI / halfInstancesLength - 1f);
-
                 float sinClosenessToTheCenter = Mathf.Pow(Mathf.Sin(closenessToTheCenter * Mathf.PI / 2f), 5);
 
+                if (_testMode)
+                    sinClosenessToTheCenter = 1f;
+
                 _targetPeakHeights[i] = new PeakInfo(
-                    Mathf.Max(-peakInfo.Min * _maxPeakHeight * sinClosenessToTheCenter * _minPeakHeightMultiplier, _peakMinHeight),
+                    Mathf.Max(-peakInfo.Min * _maxPeakHeight * sinClosenessToTheCenter * _minPeakHeightMultiplier,
+                        _peakMinHeight),
                     Mathf.Max(peakInfo.Max * _maxPeakHeight * sinClosenessToTheCenter, _peakMinHeight)
                 );
             }
@@ -131,13 +147,15 @@ public class MainController : MonoBehaviour
             var peakInstance = _peakInstances[i];
             PeakInfo targetHeights = _targetPeakHeights[i];
 
+            var finalPeakInterpolation = _testMode ? 1f : _peakInterpolation;
+
             var sizeDelta = peakInstance.MaxPeak.rectTransform.sizeDelta;
             peakInstance.MaxPeak.rectTransform.sizeDelta =
-                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Max, _peakInterpolation));
+                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Max, finalPeakInterpolation));
 
             sizeDelta = peakInstance.MinPeak.rectTransform.sizeDelta;
             peakInstance.MinPeak.rectTransform.sizeDelta =
-                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Min, _peakInterpolation));
+                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Min, finalPeakInterpolation));
         }
     }
 
