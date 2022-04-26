@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 510c61cdec524e86b647525bb5947f82, type: 3}
   m_Name: Minimal Scene Blur Config
   m_EditorClassIdentifier: 
-  radius: 13.1
+  radius: 17.96
   iteration: 3
-  maxDepth: 101
-  strength: 67.12
+  maxDepth: 2063
+  strength: 29.67
