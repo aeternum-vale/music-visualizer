@@ -5,8 +5,7 @@ using NAudioWaveFormRenderer;
 using NaughtyAttributes;
 using TMPro;
 using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.Rendering.Universal;
+using UnityEngine.Rendering.PostProcessing;
 
 public class PeaksWaveVisualizer : MonoBehaviour
 {
@@ -28,7 +27,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
     [SerializeField] private float _waveBloomInterpolation = 1f;
     [SerializeField] private float _waveBloomPower = 1f;
     [SerializeField] private EPeakProviderType _waveBloomPeakProvider = EPeakProviderType.Max;
-    [SerializeField] private VolumeProfile _ppVolumeProfile;
+    [SerializeField] private PostProcessProfile _ppProfile;
 
     [Space] [SerializeField] private bool _testMode = false;
 
@@ -57,7 +56,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
         _maxPeakHeight = _peaksContainer.rect.height / 2;
         _defaultPeakInfo = new PeakInfo(-_peakMinHeight / _maxPeakHeight, _peakMinHeight / _maxPeakHeight);
 
-        _ppVolumeProfile.TryGet(out _ppBloom);
+        _ppBloom = _ppProfile.GetSetting<Bloom>();
     }
 
     private void Start()
