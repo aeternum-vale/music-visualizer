@@ -46,6 +46,9 @@ public class PeaksWaveVisualizer : MonoBehaviour
     private int _lastCenterPeakInfoIndex;
     private Bloom _ppBloom;
 
+    private const float TimeDeltaFor220Fps = 1f / 220f;
+
+    private float CorrectedTimeDelta => Time.deltaTime / TimeDeltaFor220Fps;
 
     private void Awake()
     {
@@ -125,7 +128,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
         if (!_timerIsRunning) return;
 
         _currentTime += Time.deltaTime;
-        DisplayTime(_currentTime);
+        DisplayTime(_audioSource.time);
 
         UpdatePeaks();
     }
@@ -135,9 +138,11 @@ public class PeaksWaveVisualizer : MonoBehaviour
         int instancesLength = _peakInstances.Length;
         int peakInfosLength = _peakInfos.Count;
         float audioDurationSec = (float) _audioDuration.TotalSeconds;
-
+        
+        //_audioSource.time
+        
         int centerPeakInfoIndex =
-            Mathf.RoundToInt((float) _currentTime / (float) audioDurationSec * _totalPeakInfosCount);
+            Mathf.RoundToInt((float) _audioSource.time / (float) audioDurationSec * _totalPeakInfosCount);
 
         if (centerPeakInfoIndex != _lastCenterPeakInfoIndex)
         {
@@ -175,11 +180,11 @@ public class PeaksWaveVisualizer : MonoBehaviour
 
             var sizeDelta = peakInstance.MaxPeak.rectTransform.sizeDelta;
             peakInstance.MaxPeak.rectTransform.sizeDelta =
-                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Max, finalPeakInterpolation));
+                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Max, finalPeakInterpolation * CorrectedTimeDelta));
 
             sizeDelta = peakInstance.MinPeak.rectTransform.sizeDelta;
             peakInstance.MinPeak.rectTransform.sizeDelta =
-                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Min, finalPeakInterpolation));
+                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Min, finalPeakInterpolation * CorrectedTimeDelta));
         }
         
         //TODO make it fps-independent
@@ -190,7 +195,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
                     Mathf.Clamp(_waveBgPeakInfos[centerPeakInfoIndex].Max, 0f, 1f),
                     _waveBloomPower) *
                 _waveMaxBloom,
-                _waveBloomInterpolation);
+                _waveBloomInterpolation * CorrectedTimeDelta);
 
         _ppBloom.intensity.value = newWaveBgAlpha;
     }
