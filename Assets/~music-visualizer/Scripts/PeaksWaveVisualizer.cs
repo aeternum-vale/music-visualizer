@@ -1,16 +1,23 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using NAudio.Wave;
 using NAudioWaveFormRenderer;
 using NaughtyAttributes;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
+using UnityEngine.Serialization;
+using UnityEngine.UI;
 
 public class PeaksWaveVisualizer : MonoBehaviour
 {
-    [SerializeField] private AudioSource _audioSource;
-    [SerializeField] private string _filePath;
+    [FormerlySerializedAs("_filePath")] [SerializeField]
+    private string _audioFilePath;
+
+    [SerializeField] private string _coverFilePath;
+    [SerializeField] private string _songArtist;
+    [SerializeField] private string _songTitle;
 
     [Space] [SerializeField] private EPeakProviderType _peakProviderType = EPeakProviderType.Max;
     [SerializeField] private int _totalPeakInfosCount = 1000;
@@ -19,9 +26,13 @@ public class PeaksWaveVisualizer : MonoBehaviour
     [SerializeField] private float _peakInterpolation = 0.1f;
     [ReadOnly] [SerializeField] private float _maxPeakHeight;
 
-
-    [Space] [SerializeField] private RectTransform _peaksContainer;
+    [Space] [SerializeField] private TMP_Text _songArtistText;
+    [SerializeField] private TMP_Text _songTitleText;
+    [SerializeField] private Image _coverImage;
+    [SerializeField] private SpriteRenderer _blurredCoverImage;
     [SerializeField] private TMP_Text _timeText;
+    [SerializeField] private AudioSource _audioSource;
+    [SerializeField] private RectTransform _peaksContainer;
 
     [Space] [SerializeField] private float _waveMaxBloom = 0.2f;
     [SerializeField] private float _waveBloomInterpolation = 1f;
@@ -67,12 +78,20 @@ public class PeaksWaveVisualizer : MonoBehaviour
     [Button]
     private void Play()
     {
-        RetrieveAudioInfo(GetPeakProvider(_peakProviderType), out _peakInfos, out _audioDuration);
+        var sprite = ReadCoverImageFile();
+        _coverImage.sprite = sprite;
+        _blurredCoverImage.sprite = sprite;
+        
+        _songArtistText.text = _songArtist;
+        _songTitleText.text = _songTitle;
+
+        RetrieveAudioData(GetPeakProvider(_peakProviderType), out _peakInfos, out _audioDuration);
         if (_peakProviderType != _waveBloomPeakProvider)
-            RetrieveAudioInfo(GetPeakProvider(_waveBloomPeakProvider), out _waveBgPeakInfos, out _);
+            RetrieveAudioData(GetPeakProvider(_waveBloomPeakProvider), out _waveBgPeakInfos, out _);
         else
             _waveBgPeakInfos = _peakInfos;
 
+        _audioSource.clip = CreateAudioClip();
         _audioSource.clip.LoadAudioData();
 
         _currentTime = 0;
@@ -82,13 +101,40 @@ public class PeaksWaveVisualizer : MonoBehaviour
         _audioSource.Play();
     }
 
-    private void RetrieveAudioInfo(IPeakProvider peakProvider, out List<PeakInfo> peakInfos, out TimeSpan duration)
+    private AudioClip CreateAudioClip()
     {
-        if (_filePath == null) throw new Exception("file path is null");
+        AudioClip clip;
+        using (var waveStream = new AudioFileReader(_audioFilePath))
+        {
+            var audioData = new float[waveStream.Length];
+            waveStream.Read(audioData, 0, (int) waveStream.Length);
+
+            clip = AudioClip.Create("title", (int) waveStream.Length, waveStream.WaveFormat.Channels,
+                waveStream.WaveFormat.SampleRate, false);
+            clip.SetData(audioData, 0);
+        }
+
+        return clip;
+    }
+
+    private Sprite ReadCoverImageFile()
+    {
+        byte[] byteArray = File.ReadAllBytes(_coverFilePath);
+        Texture2D tex = new Texture2D(1, 1);
+        tex.LoadImage(byteArray);
+        tex.Apply();
+        var rect = _coverImage.rectTransform.rect;
+        var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        return sprite;
+    }
+
+    private void RetrieveAudioData(IPeakProvider peakProvider, out List<PeakInfo> peakInfos, out TimeSpan duration)
+    {
+        if (_audioFilePath == null) throw new Exception("file path is null");
 
         peakInfos = new List<PeakInfo>();
 
-        using (var waveStream = new AudioFileReader(_filePath))
+        using (var waveStream = new AudioFileReader(_audioFilePath))
         {
             int bytesPerSample = waveStream.WaveFormat.BitsPerSample / 8;
             var samples = waveStream.Length / bytesPerSample;
@@ -134,12 +180,12 @@ public class PeaksWaveVisualizer : MonoBehaviour
 
     private void UpdatePeaks()
     {
+        if (_audioSource.time > _audioSource.clip.length) return;
+        
         int instancesLength = _peakInstances.Length;
         int peakInfosLength = _peakInfos.Count;
         float audioDurationSec = (float) _audioDuration.TotalSeconds;
-        
-        //_audioSource.time
-        
+
         int centerPeakInfoIndex =
             Mathf.RoundToInt((float) _audioSource.time / (float) audioDurationSec * _totalPeakInfosCount);
 
@@ -179,14 +225,15 @@ public class PeaksWaveVisualizer : MonoBehaviour
 
             var sizeDelta = peakInstance.MaxPeak.rectTransform.sizeDelta;
             peakInstance.MaxPeak.rectTransform.sizeDelta =
-                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Max, finalPeakInterpolation * CorrectedTimeDelta));
+                new Vector2(sizeDelta.x,
+                    Mathf.Lerp(sizeDelta.y, targetHeights.Max, finalPeakInterpolation * CorrectedTimeDelta));
 
             sizeDelta = peakInstance.MinPeak.rectTransform.sizeDelta;
             peakInstance.MinPeak.rectTransform.sizeDelta =
-                new Vector2(sizeDelta.x, Mathf.Lerp(sizeDelta.y, targetHeights.Min, finalPeakInterpolation * CorrectedTimeDelta));
+                new Vector2(sizeDelta.x,
+                    Mathf.Lerp(sizeDelta.y, targetHeights.Min, finalPeakInterpolation * CorrectedTimeDelta));
         }
-        
-        //TODO make it fps-independent
+
         float newWaveBgAlpha =
             Mathf.Lerp(
                 _ppBloom.intensity.value,
