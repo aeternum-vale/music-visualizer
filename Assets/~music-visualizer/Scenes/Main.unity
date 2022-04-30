@@ -7725,10 +7725,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 347995e8594ff4c41ae8da68303a0f90, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _audioFilePath: D:\Downloads\Methyl Ethel - Kids on Holiday.mp3
-  _coverFilePath: D:\Downloads\m1000x1000.png
-  _songArtist: Methyl Ethel
-  _songTitle: Kids on Holiday
+  _audioFilePath: D:\Projects\mflyer\temp\downloaded.mp3
   _peakProviderType: 3
   _totalPeakInfosCount: 3000
   _peakMinHeight: 5

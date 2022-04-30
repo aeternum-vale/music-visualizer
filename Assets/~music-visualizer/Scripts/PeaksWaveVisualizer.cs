@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NAudio.Wave;
 using NAudioWaveFormRenderer;
 using NaughtyAttributes;
@@ -15,9 +16,9 @@ public class PeaksWaveVisualizer : MonoBehaviour
     [FormerlySerializedAs("_filePath")] [SerializeField]
     private string _audioFilePath;
 
-    [SerializeField] private string _coverFilePath;
-    [SerializeField] private string _songArtist;
-    [SerializeField] private string _songTitle;
+    // [SerializeField] private string _coverFilePath;
+    // [SerializeField] private string _songArtist;
+    // [SerializeField] private string _songTitle;
 
     [Space] [SerializeField] private EPeakProviderType _peakProviderType = EPeakProviderType.Max;
     [SerializeField] private int _totalPeakInfosCount = 1000;
@@ -78,16 +79,17 @@ public class PeaksWaveVisualizer : MonoBehaviour
     [Button]
     private void Play()
     {
-        var sprite = ReadCoverImageFile();
+        RetrieveAudioFileTags(out Sprite sprite, out string artist, out string title);
+        
         _coverImage.sprite = sprite;
         _blurredCoverImage.sprite = sprite;
-        
-        _songArtistText.text = _songArtist;
-        _songTitleText.text = _songTitle;
 
-        RetrieveAudioData(GetPeakProvider(_peakProviderType), out _peakInfos, out _audioDuration);
+        _songArtistText.text = artist;
+        _songTitleText.text = title;
+
+        RetrieveAudioPeaksAndDuration(GetPeakProvider(_peakProviderType), out _peakInfos, out _audioDuration);
         if (_peakProviderType != _waveBloomPeakProvider)
-            RetrieveAudioData(GetPeakProvider(_waveBloomPeakProvider), out _waveBgPeakInfos, out _);
+            RetrieveAudioPeaksAndDuration(GetPeakProvider(_waveBloomPeakProvider), out _waveBgPeakInfos, out _);
         else
             _waveBgPeakInfos = _peakInfos;
 
@@ -117,18 +119,9 @@ public class PeaksWaveVisualizer : MonoBehaviour
         return clip;
     }
 
-    private Sprite ReadCoverImageFile()
-    {
-        byte[] byteArray = File.ReadAllBytes(_coverFilePath);
-        Texture2D tex = new Texture2D(1, 1);
-        tex.LoadImage(byteArray);
-        tex.Apply();
-        var rect = _coverImage.rectTransform.rect;
-        var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
-        return sprite;
-    }
 
-    private void RetrieveAudioData(IPeakProvider peakProvider, out List<PeakInfo> peakInfos, out TimeSpan duration)
+    private void RetrieveAudioPeaksAndDuration(IPeakProvider peakProvider, out List<PeakInfo> peakInfos,
+        out TimeSpan duration)
     {
         if (_audioFilePath == null) throw new Exception("file path is null");
 
@@ -146,6 +139,31 @@ public class PeaksWaveVisualizer : MonoBehaviour
 
             duration = waveStream.TotalTime;
         }
+    }
+
+    private void RetrieveAudioFileTags(out Sprite cover, out string artist, out string title)
+    {
+        var audioFile = TagLib.File.Create(_audioFilePath);
+        var byteArray = audioFile.Tag.Pictures[0].Data.ToArray();
+        cover = CreateSpriteOutOf(byteArray);
+        artist = audioFile.Tag.FirstAlbumArtist;
+        title = audioFile.Tag.Title;
+    }
+
+    // private Sprite ReadCoverImageFile()
+    // {
+    //     byte[] byteArray = File.ReadAllBytes(_coverFilePath);
+    //     return CreateSpriteOutOf(byteArray);
+    // }
+
+    private Sprite CreateSpriteOutOf(byte[] byteArray)
+    {
+        Texture2D tex = new Texture2D(1, 1);
+        tex.LoadImage(byteArray);
+        tex.Apply();
+        var rect = _coverImage.rectTransform.rect;
+        var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        return sprite;
     }
 
     private IPeakProvider GetPeakProvider(EPeakProviderType type)
@@ -181,7 +199,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
     private void UpdatePeaks()
     {
         if (_audioSource.time > _audioSource.clip.length) return;
-        
+
         int instancesLength = _peakInstances.Length;
         int peakInfosLength = _peakInfos.Count;
         float audioDurationSec = (float) _audioDuration.TotalSeconds;
