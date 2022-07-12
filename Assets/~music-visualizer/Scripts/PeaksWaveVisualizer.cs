@@ -16,9 +16,9 @@ public class PeaksWaveVisualizer : MonoBehaviour
     [FormerlySerializedAs("_filePath")] [SerializeField]
     private string _audioFilePath;
 
-    // [SerializeField] private string _coverFilePath;
-    // [SerializeField] private string _songArtist;
-    // [SerializeField] private string _songTitle;
+    [SerializeField] private string _coverFilePath;
+    [SerializeField] private string _songArtist;
+    [SerializeField] private string _songTitle;
 
     [Space] [SerializeField] private EPeakProviderType _peakProviderType = EPeakProviderType.Max;
     [SerializeField] private int _totalPeakInfosCount = 1000;
@@ -47,7 +47,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
     private MaxMinPeak[] _peakInstances;
     private float[] _readBuffer;
 
-    private bool _timerIsRunning;
+    private bool _isPlaying;
     private float _currentTime;
     private TimeSpan _audioDuration;
     private List<PeakInfo> _peakInfos;
@@ -61,8 +61,20 @@ public class PeaksWaveVisualizer : MonoBehaviour
 
     private float CorrectedTimeDelta => Time.deltaTime / TimeDeltaFor220Fps;
 
+    //public static PeaksWaveVisualizer Instance { get; private set; }
+
+    public float _flyerStartSec;
+    public float _flyerDurationSec;
+    public event EventHandler OnFullDurationReach;
+
+    public static PeaksWaveVisualizer Instance { get; private set; }
+
+
     private void Awake()
     {
+        if (Instance == null)
+            Instance = this;
+
         _peakInstances = _peaksContainer.GetComponentsInChildren<MaxMinPeak>();
         _targetPeakHeights = new PeakInfo[_peakInstances.Length];
         _maxPeakHeight = _peaksContainer.rect.height / 2;
@@ -71,16 +83,23 @@ public class PeaksWaveVisualizer : MonoBehaviour
         _ppBloom = _ppProfile.GetSetting<Bloom>();
     }
 
-    private void Start()
+    [Button]
+    private void PlayDefault() => Play(0f, 15f);
+    
+    
+    public void Play(float flyerStartSec, float flyerDurationSec)
     {
+        _flyerStartSec = flyerStartSec;
+        _flyerDurationSec = flyerDurationSec;
+
         Play();
     }
 
-    [Button]
+
     private void Play()
     {
         RetrieveAudioFileTags(out Sprite sprite, out string artist, out string title);
-        
+
         _coverImage.sprite = sprite;
         _blurredCoverImage.sprite = sprite;
 
@@ -97,10 +116,17 @@ public class PeaksWaveVisualizer : MonoBehaviour
         _audioSource.clip.LoadAudioData();
 
         _currentTime = 0;
-        _timerIsRunning = true;
+        _isPlaying = true;
         _lastCenterPeakInfoIndex = -1;
 
         _audioSource.Play();
+        _audioSource.time = _flyerStartSec;
+    }
+
+    public void Stop()
+    {
+        _isPlaying = false;
+        _audioSource.Stop();
     }
 
     private AudioClip CreateAudioClip()
@@ -150,11 +176,11 @@ public class PeaksWaveVisualizer : MonoBehaviour
         title = audioFile.Tag.Title;
     }
 
-    // private Sprite ReadCoverImageFile()
-    // {
-    //     byte[] byteArray = File.ReadAllBytes(_coverFilePath);
-    //     return CreateSpriteOutOf(byteArray);
-    // }
+    private Sprite ReadCoverImageFile()
+    {
+        byte[] byteArray = File.ReadAllBytes(_coverFilePath);
+        return CreateSpriteOutOf(byteArray);
+    }
 
     private Sprite CreateSpriteOutOf(byte[] byteArray)
     {
@@ -188,7 +214,7 @@ public class PeaksWaveVisualizer : MonoBehaviour
 
     private void Update()
     {
-        if (!_timerIsRunning) return;
+        if (!_isPlaying) return;
 
         _currentTime += Time.deltaTime;
         DisplayTime(_audioSource.time);
@@ -199,6 +225,13 @@ public class PeaksWaveVisualizer : MonoBehaviour
     private void UpdatePeaks()
     {
         if (_audioSource.time > _audioSource.clip.length) return;
+
+        if (_audioSource.time >= _flyerStartSec + _flyerDurationSec)
+        {
+            Debug.Log($"OnDurationReach");
+            OnFullDurationReach?.Invoke(this, EventArgs.Empty);
+        }
+
 
         int instancesLength = _peakInstances.Length;
         int peakInfosLength = _peakInfos.Count;
